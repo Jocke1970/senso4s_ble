@@ -35,6 +35,7 @@ from .ble_client import Senso4sBLEClient
 from .const import (
     AMBIGUOUS_MANUFACTURER_IDS,
     ANOMALY_NAMES,
+    CHAR_CONFIG_UUID,
     CONF_EMPTY_WEIGHT,
     CONF_ENABLE_HISTORY_POLLING,
     CONF_GAS_CAPACITY,
@@ -185,6 +186,14 @@ class Senso4sConfigFlow(ConfigFlow, domain=DOMAIN):
             if not await self._client.connect():
                 await self._cleanup_client()
                 return self.async_abort(reason="cannot_connect")
+
+            if not self._client.has_characteristic(CHAR_CONFIG_UUID):
+                missing = ", ".join(self._client.missing_characteristics)
+                await self._cleanup_client()
+                return self.async_abort(
+                    reason="unsupported_firmware",
+                    description_placeholders={"missing": missing},
+                )
 
             # Check if device has been configured
             is_configured = await self._client.is_device_configured()

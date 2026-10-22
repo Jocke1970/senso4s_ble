@@ -86,7 +86,8 @@
       "verification_timeout": "Przekroczono limit czasu oczekiwania na odczyt poziomu. Urządzenie może potrzebować więcej czasu na stabilizację.",
       "verification_anomaly": "Kalibracja zakończona, ale urządzenie zgłasza anomalie: {anomalies}. Sprawdź położenie urządzenia.",
       "verification_failed": "Nie udało się zweryfikować wyniku kalibracji. Sprawdź urządzenie.",
-      "cannot_connect": "Nie można połączyć się z urządzeniem. Konfiguracja wymaga adaptera lub serwera proxy Bluetooth, który potrafi zarówno skanować aktywnie, jak i otwierać połączenia; serwery proxy działające tylko pasywnie widzą urządzenie, ale nie mogą go skonfigurować."
+      "cannot_connect": "Nie można połączyć się z urządzeniem. Konfiguracja wymaga adaptera lub serwera proxy Bluetooth, który potrafi zarówno skanować aktywnie, jak i otwierać połączenia; serwery proxy działające tylko pasywnie widzą urządzenie, ale nie mogą go skonfigurować.",
+      "unsupported_firmware": "Urządzenie połączyło się, ale nie udostępnia charakterystyk wymaganych przez tę integrację ({missing}). Może działać na oprogramowaniu, które nie jest jeszcze obsługiwane. Zgłoś to na https://github.com/ksanislo/senso4s_ble/issues, dołączając dziennik Home Assistant."
     }
   },
   "options": {

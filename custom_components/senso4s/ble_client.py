@@ -51,6 +51,18 @@ from .parser import (
 
 _LOGGER = logging.getLogger(__name__)
 
+EXPECTED_CHARACTERISTICS: dict[str, str] = {
+    "level": CHAR_LEVEL_UUID,
+    "config": CHAR_CONFIG_UUID,
+    "history": CHAR_HISTORY_UUID,
+    "calibration": CHAR_CALIBRATION_UUID,
+    "setup_date": CHAR_SETUP_DATE_UUID,
+}
+
+# Warn once per address per run; history polls reconnect on a timer and would
+# otherwise repeat the same table every cycle.
+_gatt_warned: set[str] = set()
+
 
 class Senso4sBLEClient:
     """Client for connected BLE operations with Senso4s devices."""
@@ -66,6 +78,7 @@ class Senso4sBLEClient:
         self._disconnect_callback = disconnect_callback
         self._lock = asyncio.Lock()
         self._addr = service_info.address
+        self.missing_characteristics: list[str] = []
 
     @property
     def is_connected(self) -> bool:
@@ -87,6 +100,7 @@ class Senso4sBLEClient:
                     max_attempts=3,
                 )
                 _LOGGER.debug("[%s] Connected", self._addr)
+                self._check_gatt_table()
                 return True
             except (BleakError, TimeoutError) as err:
                 _LOGGER.warning(
@@ -94,6 +108,37 @@ class Senso4sBLEClient:
                 )
                 self._client = None
                 return False
+
+    def has_characteristic(self, uuid: str) -> bool:
+        return uuid not in (
+            EXPECTED_CHARACTERISTICS[name] for name in self.missing_characteristics
+        )
+
+    def _check_gatt_table(self) -> None:
+        assert self._client is not None
+        services = self._client.services
+        present = {char.uuid.lower() for svc in services for char in svc.characteristics}
+        self.missing_characteristics = [
+            name for name, uuid in EXPECTED_CHARACTERISTICS.items() if uuid not in present
+        ]
+        table = "; ".join(
+            f"{svc.uuid}=["
+            + ", ".join(
+                f"{char.uuid}({'/'.join(char.properties)})" for char in svc.characteristics
+            )
+            + "]"
+            for svc in services
+        )
+        if self.missing_characteristics and self._addr not in _gatt_warned:
+            _gatt_warned.add(self._addr)
+            _LOGGER.warning(
+                "[%s] Device is missing expected characteristics %s; GATT table: %s",
+                self._addr,
+                self.missing_characteristics,
+                table,
+            )
+        else:
+            _LOGGER.debug("[%s] GATT table: %s", self._addr, table)
 
     async def disconnect(self) -> None:
         """Disconnect from the device."""
@@ -161,6 +206,18 @@ class Senso4sBLEClient:
         """
         if not self.is_connected or self._client is None:
             return None
+
+        if not self.has_characteristic(CHAR_SETUP_DATE_UUID):
+            config = await self.read_config()
+            if config is None:
+                return None
+            _LOGGER.info(
+                "[%s] No setup date characteristic; judging configured state from "
+                "cylinder config (gas_capacity=%.2f kg)",
+                self._addr,
+                config.gas_capacity_kg,
+            )
+            return config.gas_capacity_kg > 0
 
         try:
             _LOGGER.debug("[%s] BLE: Reading SETUP_DATE to check if configured", self._addr)
