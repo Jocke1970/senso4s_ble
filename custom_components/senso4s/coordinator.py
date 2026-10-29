@@ -360,6 +360,23 @@ class Senso4sCoordinator(ActiveBluetoothProcessorCoordinator[Senso4sDeviceData])
             else 0.0
         )
         self._last_proof_of_life_time = cur
+        # HA's cache may return several records for the same scanner source.
+        # Keep one representative record per source so diagnostics report the
+        # number of distinct adapters rather than the number of cache entries.
+        # Prefer a record with manufacturer data if only one has it.
+        unique_scanners = {}
+        for device in devices:
+            source = device.scanner.source
+            existing = unique_scanners.get(source)
+            if (
+                existing is None
+                or (
+                    not existing.advertisement.manufacturer_data
+                    and device.advertisement.manufacturer_data
+                )
+            ):
+                unique_scanners[source] = device
+
         scanners = " | ".join(
             "%s(RSSI %sdBm, mfr=%s)"
             % (
@@ -367,12 +384,14 @@ class Senso4sCoordinator(ActiveBluetoothProcessorCoordinator[Senso4sDeviceData])
                 getattr(d.advertisement, "rssi", "?"),
                 _format_mfr(d.advertisement.manufacturer_data),
             )
-            for d in devices
+            for d in unique_scanners.values()
         )
         _LOGGER.debug(
-            "[%s] BLE RX [SCANNER] %.1fs since previous; heard by %d scanner(s): %s",
+            "[%s] BLE RX [SCANNER] %.1fs since previous; heard by %d unique "
+            "scanner(s) (%d cached entries): %s",
             self.address,
             gap,
+            len(unique_scanners),
             len(devices),
             scanners or "(none)",
         )
