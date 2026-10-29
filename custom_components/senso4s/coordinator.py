@@ -184,7 +184,9 @@ class Senso4sCoordinator(ActiveBluetoothProcessorCoordinator[Senso4sDeviceData])
             update_method=self._update_method,
             needs_poll_method=self._needs_poll,
             poll_method=self._async_poll_history,
-            connectable=True,
+            # Read advertisements from passive proxies as well. Connected
+            # operations resolve a separate connectable source below.
+            connectable=False,
         )
 
     @property
@@ -231,7 +233,14 @@ class Senso4sCoordinator(ActiveBluetoothProcessorCoordinator[Senso4sDeviceData])
 
     @property
     def service_info(self) -> Optional[BluetoothServiceInfoBleak]:
-        return self._last_service_info
+        """Find an adapter that can actually connect for GATT operations.
+
+        _last_service_info may come from a passive-only Bluetooth proxy.
+        Never use its BLEDevice for calibration, configuration or history.
+        """
+        return bluetooth.async_last_service_info(
+            self.hass, self.address, connectable=True
+        )
 
     @property
     def last_known_setup_date(self) -> Optional[datetime]:
@@ -535,6 +544,13 @@ class Senso4sCoordinator(ActiveBluetoothProcessorCoordinator[Senso4sDeviceData])
             return False
         if not self.enable_history_polling:
             return False
+        # Passive advertisements update live entities without a connection.
+        # Never schedule GATT polling if only passive-only proxies can hear
+        # the device; a connectable BLEDevice is required for Bleak.
+        if bluetooth.async_ble_device_from_address(
+            self.hass, self.address, connectable=True
+        ) is None:
+            return False
         # Only poll when gas level actually changed — dispatch can fire on
         # debug-byte or anomaly-flag changes that don't affect history.
         if (
@@ -549,8 +565,19 @@ class Senso4sCoordinator(ActiveBluetoothProcessorCoordinator[Senso4sDeviceData])
     ) -> Senso4sDeviceData:
         from .ble_client import Senso4sBLEClient
 
+        # The processor may have been triggered by a passive-only proxy.
+        # Resolve a connectable source explicitly rather than handing a
+        # non-connectable BLEDevice to the GATT client.
+        connectable_info = self.service_info
+        if connectable_info is None:
+            _LOGGER.debug(
+                "[%s] Poll skipped: no connectable Bluetooth source",
+                self.address,
+            )
+            return self.data
+
         self._poll_in_flight = True
-        client = Senso4sBLEClient(last_service_info)
+        client = Senso4sBLEClient(connectable_info)
         try:
             if not await client.connect():
                 _LOGGER.debug(
