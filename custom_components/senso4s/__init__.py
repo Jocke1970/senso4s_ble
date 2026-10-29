@@ -153,7 +153,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Seed from cache so entities render on warm restarts, the backfill
     # below has data to read, and the proof-of-life backstop can trigger
     # an initial history poll without waiting for a dispatch.
-    seed_info = bluetooth.async_last_service_info(hass, address, connectable=True)
+    # Restore the most recent advertisement even if it came from a
+    # passive-only proxy. GATT operations separately require connectable=True.
+    seed_info = bluetooth.async_last_service_info(hass, address, connectable=False)
     if seed_info is not None:
         coordinator._update_method(seed_info)
         coordinator._last_service_info = seed_info
