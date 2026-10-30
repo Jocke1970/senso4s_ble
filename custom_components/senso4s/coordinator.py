@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import logging
+from time import monotonic
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -71,6 +72,8 @@ from .parser import interpret_level_byte, parse_manufacturer_data
 _LOGGER = logging.getLogger(__name__)
 
 PROOF_OF_LIFE_INTERVAL = timedelta(seconds=30)
+SCANNER_CACHE_MAX_AGE_SECONDS = 120
+SCANNER_CACHE_RECOVERY_INTERVAL_SECONDS = 300
 PASSIVE_HISTORY_STORAGE_VERSION = 1
 
 
@@ -155,6 +158,7 @@ class Senso4sCoordinator(ActiveBluetoothProcessorCoordinator[Senso4sDeviceData])
         self._poll_in_flight = False
         self._last_polled_gas_level: Optional[int] = None
         self._last_proof_of_life_time: Optional[float] = None
+        self._last_recovered_cache_timestamp: float = 0.0
         self._cancel_proof_of_life: Any = None
 
         # Passive-scan detection: True once any advert carries manufacturer data.
@@ -334,6 +338,7 @@ class Senso4sCoordinator(ActiveBluetoothProcessorCoordinator[Senso4sDeviceData])
             self.hass, self.address, connectable=False
         )
         self._check_passive_scanning(devices)
+        self._recover_from_scanner_cache(devices)
         info = bluetooth.async_last_service_info(
             self.hass, self.address, connectable=False
         )
@@ -411,6 +416,53 @@ class Senso4sCoordinator(ActiveBluetoothProcessorCoordinator[Senso4sDeviceData])
             )
             if stale:
                 self._debounced_poll.async_schedule_call()
+
+    @callback
+    def _recover_from_scanner_cache(self, devices: list) -> None:
+        """Recover fresh proxy data when habluetooth suppresses identical adverts."""
+        if self.data.last_seen is not None and (
+            dt_util.now() - self.data.last_seen
+        ).total_seconds() < SCANNER_CACHE_RECOVERY_INTERVAL_SECONDS:
+            return
+
+        now = monotonic()
+        latest: BluetoothServiceInfoBleak | None = None
+        for scanner_device in devices:
+            scanner = scanner_device.scanner
+            seen_at = scanner.discovered_device_timestamps.get(self.address)
+            if (
+                seen_at is None
+                or not 0 <= now - seen_at <= SCANNER_CACHE_MAX_AGE_SECONDS
+                or not scanner_device.advertisement.manufacturer_data
+            ):
+                continue
+
+            info = BluetoothServiceInfoBleak.from_device_and_advertisement_data(
+                scanner_device.device,
+                scanner_device.advertisement,
+                scanner.source,
+                seen_at,
+                scanner.connectable,
+            )
+            if process_service_info(info) is None:
+                continue
+            if latest is None or info.time > latest.time:
+                latest = info
+
+        if (
+            latest is None
+            or latest.time <= self._last_recovered_cache_timestamp
+        ):
+            return
+
+        self._last_recovered_cache_timestamp = latest.time
+        _LOGGER.debug(
+            "[%s] BLE RX [CACHE RECOVERY] fresh data via %s (RSSI: %s dBm)",
+            self.address,
+            latest.source,
+            latest.rssi,
+        )
+        self.async_set_updated_data(self._update_method(latest))
 
     @callback
     def _check_passive_scanning(self, devices: list) -> None:
