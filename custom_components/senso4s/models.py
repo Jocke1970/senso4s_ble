@@ -32,7 +32,7 @@ class Senso4sDeviceData:
 
     # Current readings
     gas_level_percent: int = -1  # 0-100, -1 if unavailable
-    battery_percent: int = 0
+    battery_percent: Optional[int] = None
     usage_mode: UsageMode = UsageMode.HOUSEHOLD
 
     # Device info
