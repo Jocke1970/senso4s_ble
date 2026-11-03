@@ -48,6 +48,14 @@ Configurable from the integration options:
 - Senso4s Basic
 - Senso4s Plus (adds Caravanning mode and the three anomaly sensors)
 
+## Brand icon — dev preview (Home Assistant 2026.3+)
+
+This development branch now includes a SENSO brand icon at `custom_components/senso4s/brand/icon.png` (256 × 256 PNG). It is recreated **from the user-supplied original SENSO artwork**, preserving the black/charcoal wordmark, lime accent, white rounded tile and transparent outer corners. It does not use the earlier AI-generated version with artificial shadows.
+
+Since Home Assistant 2026.3, custom integrations can ship local brand assets in their `brand/` folder. Home Assistant uses these images when the integration is installed, instead of requiring a separate Home Assistant brands-repository submission. The square icon also serves as the logo fallback. This is **visual branding only**: BLE scanning, device connections, calibration, refilling and entities are unchanged.
+
+The icon is staged in `dev` for review. It has **not** been promoted to `beta` or `main`.
+
 ## Installation
 
 ### HACS (recommended)
